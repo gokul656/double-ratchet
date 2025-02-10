@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 type DHKeyPair struct {
 	pkey   any
 	pubkey any
@@ -15,5 +17,9 @@ type DoubleRatchet interface {
 }
 
 func main() {
-	proof()
+	bob := NewBob()
+	alice := NewAlice()
+
+	fmt.Printf("Alice : %v\n", bob.XD3H(alice))
+	fmt.Printf("Bob   : %v\n", alice.XD3H(bob))
 }
