@@ -17,9 +17,9 @@ type DoubleRatchet interface {
 }
 
 func main() {
-	bob := NewBob()
-	alice := NewAlice()
+	bob := NewParticipant()
+	alice := NewParticipant()
 
-	fmt.Printf("Alice : %v\n", bob.XD3H(alice))
-	fmt.Printf("Bob   : %v\n", alice.XD3H(bob))
+	fmt.Printf("Alice : %v\n", bob.X3DH(alice))
+	fmt.Printf("Bob   : %v\n", alice.X3DH(bob))
 }

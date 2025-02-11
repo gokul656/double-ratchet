@@ -13,36 +13,39 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-type Bob struct {
-	IdentityKey ed25519.PrivateKey
-	OneTimeKey  ed25519.PrivateKey
-	SignedKey   ed25519.PrivateKey
+type Participant struct {
+	IdentityKey  ed25519.PrivateKey
+	EphemeralKey ed25519.PrivateKey
+	SignedKey    ed25519.PrivateKey
+	OneTimeKey   ed25519.PrivateKey
 }
 
-func NewBob() *Bob {
+func NewParticipant() *Participant {
 	_, ikPriv, _ := ed25519.GenerateKey(rand.Reader)
-	_, okPriv, _ := ed25519.GenerateKey(rand.Reader)
+	_, ephPriv, _ := ed25519.GenerateKey(rand.Reader)
 	_, sPriv, _ := ed25519.GenerateKey(rand.Reader)
+	_, otPriv, _ := ed25519.GenerateKey(rand.Reader)
 
-	return &Bob{
-		IdentityKey: ikPriv,
-		OneTimeKey:  okPriv,
-		SignedKey:   sPriv,
+	return &Participant{
+		IdentityKey:  ikPriv,
+		EphemeralKey: ephPriv,
+		SignedKey:    sPriv,
+		OneTimeKey:   otPriv,
 	}
 }
 
-func (b *Bob) XD3H(a *Alice) string {
-	bSignedKeyPub, _ := publicKeyToBytes(b.SignedKey.Public())
-	bIdentityKeyPub, _ := publicKeyToBytes(b.IdentityKey.Public())
-	bOneTimeKeyPub, _ := publicKeyToBytes(b.OneTimeKey.Public())
+func (p *Participant) X3DH(other *Participant) string {
+	selfSignedKeyPub, _ := publicKeyToBytes(p.SignedKey.Public())
+	selfIdentityKeyPub, _ := publicKeyToBytes(p.IdentityKey.Public())
+	selfOneTimeKeyPub, _ := publicKeyToBytes(p.OneTimeKey.Public())
 
-	alicebIdentityKeyPub, _ := publicKeyToBytes(a.IdentityKey.Public())
-	alicebEphemeralKeyPub, _ := publicKeyToBytes(a.EphemeralKey.Public())
+	otherIdentityKeyPub, _ := publicKeyToBytes(other.IdentityKey.Public())
+	otherEphemeralKeyPub, _ := publicKeyToBytes(other.EphemeralKey.Public())
 
-	dh1, _ := computeSharedSecret(bSignedKeyPub, alicebIdentityKeyPub)
-	dh2, _ := computeSharedSecret(bIdentityKeyPub, alicebEphemeralKeyPub)
-	dh3, _ := computeSharedSecret(bSignedKeyPub, alicebEphemeralKeyPub)
-	dh4, _ := computeSharedSecret(bOneTimeKeyPub, alicebEphemeralKeyPub)
+	dh1, _ := computeSharedSecret(selfSignedKeyPub, otherIdentityKeyPub)
+	dh2, _ := computeSharedSecret(selfIdentityKeyPub, otherEphemeralKeyPub)
+	dh3, _ := computeSharedSecret(selfSignedKeyPub, otherEphemeralKeyPub)
+	dh4, _ := computeSharedSecret(selfOneTimeKeyPub, otherEphemeralKeyPub)
 
 	combinedDH := append(dh1, dh2...)
 	combinedDH = append(combinedDH, dh3...)
@@ -67,41 +70,6 @@ func publicKeyToBytes(pubKey crypto.PublicKey) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported public key type: %T", pubKey)
 	}
-}
-
-type Alice struct {
-	IdentityKey  ed25519.PrivateKey
-	EphemeralKey ed25519.PrivateKey
-}
-
-func NewAlice() *Alice {
-	_, ikPriv, _ := ed25519.GenerateKey(rand.Reader)
-	_, ephPriv, _ := ed25519.GenerateKey(rand.Reader)
-
-	return &Alice{
-		IdentityKey:  ikPriv,
-		EphemeralKey: ephPriv,
-	}
-}
-
-func (a *Alice) XD3H(b *Bob) string {
-	bSignedKeyPub, _ := publicKeyToBytes(b.SignedKey.Public())
-	bIdentityKeyPub, _ := publicKeyToBytes(b.IdentityKey.Public())
-	bOneTimeKeyPub, _ := publicKeyToBytes(b.OneTimeKey.Public())
-
-	alicebIdentityKeyPub, _ := publicKeyToBytes(a.IdentityKey.Public())
-	alicebEphemeralKeyPub, _ := publicKeyToBytes(a.EphemeralKey.Public())
-
-	dh1, _ := computeSharedSecret(alicebIdentityKeyPub, bSignedKeyPub)
-	dh2, _ := computeSharedSecret(alicebEphemeralKeyPub, bIdentityKeyPub)
-	dh3, _ := computeSharedSecret(alicebEphemeralKeyPub, bSignedKeyPub)
-	dh4, _ := computeSharedSecret(alicebEphemeralKeyPub, bOneTimeKeyPub)
-
-	combinedDH := append(dh1, dh2...)
-	combinedDH = append(combinedDH, dh3...)
-	combinedDH = append(combinedDH, dh4...)
-
-	return HKDF(combinedDH)
 }
 
 func HKDF(combinedDH []byte) string {
