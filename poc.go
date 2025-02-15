@@ -2,7 +2,10 @@ package main
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,11 +16,16 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+type DoubleRatchet interface {
+}
+
 type Participant struct {
 	IdentityKey  ed25519.PrivateKey
 	EphemeralKey ed25519.PrivateKey
 	SignedKey    ed25519.PrivateKey
 	OneTimeKey   ed25519.PrivateKey
+	RootKey      []byte
+	ChainKey     []byte
 }
 
 func NewParticipant() *Participant {
@@ -35,28 +43,91 @@ func NewParticipant() *Participant {
 }
 
 func (p *Participant) X3DH(other *Participant) string {
-	selfSignedKeyPub, _ := publicKeyToBytes(p.SignedKey.Public())
-	selfIdentityKeyPub, _ := publicKeyToBytes(p.IdentityKey.Public())
-	selfOneTimeKeyPub, _ := publicKeyToBytes(p.OneTimeKey.Public())
+	combinedDH, _ := computeSharedSecret(p.SignedKey.Seed(), other.IdentityKey.Public().(ed25519.PublicKey))
 
-	otherIdentityKeyPub, _ := publicKeyToBytes(other.IdentityKey.Public())
-	otherEphemeralKeyPub, _ := publicKeyToBytes(other.EphemeralKey.Public())
-
-	dh1, _ := computeSharedSecret(selfSignedKeyPub, otherIdentityKeyPub)
-	dh2, _ := computeSharedSecret(selfIdentityKeyPub, otherEphemeralKeyPub)
-	dh3, _ := computeSharedSecret(selfSignedKeyPub, otherEphemeralKeyPub)
-	dh4, _ := computeSharedSecret(selfOneTimeKeyPub, otherEphemeralKeyPub)
-
-	combinedDH := append(dh1, dh2...)
-	combinedDH = append(combinedDH, dh3...)
-	combinedDH = append(combinedDH, dh4...)
+	ratchet, _ := deriveRootAndChainKey(combinedDH)
+	p.RootKey = ratchet.RootKey
+	p.ChainKey = ratchet.ChainKey
 
 	return HKDF(combinedDH)
 }
 
+func deriveRootAndChainKey(secret []byte) (*Participant, error) {
+	hkdf := hkdf.New(sha256.New, secret, nil, []byte("Root and Chain Key Derivation"))
+	rootKey := make([]byte, 32)
+	chainKey := make([]byte, 32)
+
+	if _, err := io.ReadFull(hkdf, rootKey); err != nil {
+		return nil, err
+	}
+
+	if _, err := io.ReadFull(hkdf, chainKey); err != nil {
+		return nil, err
+	}
+
+	return &Participant{
+		RootKey:  rootKey,
+		ChainKey: chainKey,
+	}, nil
+}
+
+func DeriveMessageKey(chainKey []byte) ([]byte, []byte) {
+	h := hmac.New(sha256.New, chainKey)
+	h.Write([]byte("message key derivation"))
+	messageKey := h.Sum(nil)
+
+	h.Reset()
+	h.Write([]byte("next chain key derivation"))
+	nextChainKey := h.Sum(nil)
+
+	return messageKey, nextChainKey
+}
+
+func Encrypt(plaintext string, messageKey []byte) (string, []byte, error) {
+	block, err := aes.NewCipher(messageKey)
+	if err != nil {
+		return "", nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", nil, err
+	}
+
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", nil, err
+	}
+
+	cipherText := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
+	finalCipher := append(nonce, cipherText...)
+
+	return base64.StdEncoding.EncodeToString(finalCipher), nonce, nil
+}
+
+func Decrypt(base64String string, messageKey []byte) (string, error) {
+	encrypted, _ := base64.StdEncoding.DecodeString(base64String)
+
+	block, _ := aes.NewCipher(messageKey)
+	aesGCM, _ := cipher.NewGCM(block)
+
+	nonceSize := aesGCM.NonceSize()
+	if len(encrypted) < nonceSize {
+		return "", fmt.Errorf("invalid ciphertext")
+	}
+
+	nonce, ciphertext := encrypted[:nonceSize], encrypted[nonceSize:]
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}
+
 func computeSharedSecret(publicKey, privateKey []byte) ([]byte, error) {
 	var sharedSecret []byte
-	_, err := curve25519.X25519(privateKey, publicKey[:])
+	_, err := curve25519.X25519(privateKey, publicKey)
 	if err != nil {
 		return []byte{}, err
 	}
