@@ -36,6 +36,10 @@ make run
   - Supports out-of-order message reception.
   - Limits the number of skipped messages to prevent resource exhaustion attacks.
 
+## Todo
+
+- Need to implement ECDHE_RSA for improved security
+
 ## References
 
 - [Double Ratchet Algorithm Specification](https://signal.org/docs/specifications/doubleratchet/)
