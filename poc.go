@@ -57,13 +57,8 @@ func deriveRootAndChainKey(secret []byte) (*Participant, error) {
 	rootKey := make([]byte, 32)
 	chainKey := make([]byte, 32)
 
-	if _, err := io.ReadFull(hkdf, rootKey); err != nil {
-		return nil, err
-	}
-
-	if _, err := io.ReadFull(hkdf, chainKey); err != nil {
-		return nil, err
-	}
+	io.ReadFull(hkdf, rootKey)
+	io.ReadFull(hkdf, chainKey)
 
 	return &Participant{
 		RootKey:  rootKey,
@@ -95,9 +90,7 @@ func Encrypt(plaintext string, messageKey []byte) (string, []byte, error) {
 	}
 
 	nonce := make([]byte, aesGCM.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", nil, err
-	}
+	io.ReadFull(rand.Reader, nonce)
 
 	cipherText := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
 	finalCipher := append(nonce, cipherText...)
@@ -147,10 +140,7 @@ func HKDF(combinedDH []byte) string {
 	hkdf := hkdf.New(sha256.New, combinedDH, nil, nil)
 
 	sharedKey := make([]byte, 32)
-	_, err := io.ReadFull(hkdf, sharedKey)
-	if err != nil {
-		return ""
-	}
+	io.ReadFull(hkdf, sharedKey)
 
 	return base64.StdEncoding.EncodeToString(sharedKey)
 }
